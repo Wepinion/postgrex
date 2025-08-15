@@ -3382,6 +3382,10 @@ defmodule Postgrex.Protocol do
     update_in(s.messages, &[fields | &1])
   end
 
+  defp handle_msg(s, _status, {:msg_close_complete}) do
+    {:ok, s}
+  end
+
   defp disconnect(s, tag, action, reason, buffer) do
     disconnect(%{s | buffer: buffer}, tag, action, reason)
   end
