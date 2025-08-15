@@ -3297,13 +3297,67 @@ defmodule Postgrex.Protocol do
   end
 
   defp rows_recv(%{types: types} = s, result_types, rows, buffer) do
+    # Aurora DSQL compatibility: Check for error messages before decoding rows
+    case buffer do
+      # Handle Aurora DSQL error messages (starts with 0x45 = 'E')
+      <<69, _length::32, rest::binary>> = error_buffer ->
+        case parse_aurora_dsql_error(error_buffer) do
+          {:ok, error_msg} ->
+            # Return a proper Postgrex error
+            {:error, %Postgrex.Error{
+              message: error_msg,
+              postgres: %{
+                "severity" => "ERROR",
+                "code" => "0A000",
+                "message" => error_msg
+              }
+            }}
+          {:error, _} ->
+            # If we can't parse the error, fall back to normal processing
+            decode_rows_with_fallback(s, result_types, rows, buffer, types)
+        end
+      
+      # Normal case: not an error message
+      _ ->
+        decode_rows_with_fallback(s, result_types, rows, buffer, types)
+    end
+  end
+
+  # Helper function to handle normal row decoding with error fallback
+  defp decode_rows_with_fallback(s, result_types, rows, buffer, types) do
     case Types.decode_rows(buffer, result_types, rows, types) do
       {:ok, rows, buffer} ->
         rows_msg(s, rows, buffer)
 
       {:more, buffer, rows, more} ->
         rows_recv(s, result_types, rows, buffer, more)
+        
+      # Aurora DSQL compatibility: Handle unexpected decode errors
+      {:error, reason} ->
+        {:error, %Postgrex.Error{
+          message: "Aurora DSQL decode error: #{inspect(reason)}",
+          postgres: %{"severity" => "ERROR", "code" => "XX000"}
+        }}
     end
+  end
+
+  # Parse Aurora DSQL error messages
+  defp parse_aurora_dsql_error(<<69, length::32, rest::binary>>) do
+    case rest do
+      # Look for common Aurora DSQL error patterns
+      <<"SERROR", 0, "VERROR", 0, "C0A000", 0, "M", message::binary>> ->
+        # Extract the error message
+        case :binary.split(message, <<0>>, [:global]) do
+          [error_text | _] -> {:ok, "Aurora DSQL: #{error_text}"}
+          [] -> {:ok, "Aurora DSQL: Unknown error"}
+        end
+      
+      # Handle other error formats
+      _ ->
+        {:ok, "Aurora DSQL: Protocol error (unsupported operation)"}
+    end
+  rescue
+    _ -> {:error, :parse_failed}
   end
 
   defp rows_recv(%{sock: {mod, sock}} = s, result_types, rows, buffer, more) do
