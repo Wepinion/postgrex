@@ -3296,6 +3296,35 @@ defmodule Postgrex.Protocol do
     end
   end
 
+  # Aurora DSQL compatibility: Handle error messages in rows_recv with {:ok, state} pattern
+  defp rows_recv({:ok, %{types: types} = s}, result_types, rows, buffer) do
+    # Aurora DSQL compatibility: Check for error messages before decoding rows
+    case buffer do
+      # Handle Aurora DSQL error messages (starts with 0x45 = 'E')
+      <<69, _length::32, _rest::binary>> = error_buffer ->
+        case parse_aurora_dsql_error(error_buffer) do
+          {:ok, error_msg} ->
+            # Create proper Postgrex error and disconnect
+            error = %Postgrex.Error{
+              message: error_msg,
+              postgres: %{
+                "severity" => "ERROR",
+                "code" => "0A000",
+                "message" => error_msg
+              }
+            }
+            disconnect(s, :postgrex, "aurora_dsql_error", error, error_buffer)
+          {:error, _} ->
+            # If we can't parse the error, fall back to normal processing
+            decode_rows_with_fallback(s, result_types, rows, buffer, types)
+        end
+      
+      # Normal case: not an error message
+      _ ->
+        decode_rows_with_fallback(s, result_types, rows, buffer, types)
+    end
+  end
+
   defp rows_recv(%{types: types} = s, result_types, rows, buffer) do
     # Aurora DSQL compatibility: Check for error messages before decoding rows
     case buffer do
