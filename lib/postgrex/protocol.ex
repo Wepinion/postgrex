@@ -3300,18 +3300,19 @@ defmodule Postgrex.Protocol do
     # Aurora DSQL compatibility: Check for error messages before decoding rows
     case buffer do
       # Handle Aurora DSQL error messages (starts with 0x45 = 'E')
-      <<69, _length::32, rest::binary>> = error_buffer ->
+      <<69, _length::32, _rest::binary>> = error_buffer ->
         case parse_aurora_dsql_error(error_buffer) do
           {:ok, error_msg} ->
-            # Return a proper Postgrex error
-            {:error, %Postgrex.Error{
+            # Create proper Postgrex error and disconnect
+            error = %Postgrex.Error{
               message: error_msg,
               postgres: %{
                 "severity" => "ERROR",
                 "code" => "0A000",
                 "message" => error_msg
               }
-            }}
+            }
+            disconnect(s, :postgrex, "aurora_dsql_error", error, error_buffer)
           {:error, _} ->
             # If we can't parse the error, fall back to normal processing
             decode_rows_with_fallback(s, result_types, rows, buffer, types)
@@ -3334,15 +3335,16 @@ defmodule Postgrex.Protocol do
         
       # Aurora DSQL compatibility: Handle unexpected decode errors
       {:error, reason} ->
-        {:error, %Postgrex.Error{
+        error = %Postgrex.Error{
           message: "Aurora DSQL decode error: #{inspect(reason)}",
           postgres: %{"severity" => "ERROR", "code" => "XX000"}
-        }}
+        }
+        disconnect(s, :postgrex, "decode_error", error, buffer)
     end
   end
 
   # Parse Aurora DSQL error messages
-  defp parse_aurora_dsql_error(<<69, length::32, rest::binary>>) do
+  defp parse_aurora_dsql_error(<<69, _length::32, rest::binary>>) do
     case rest do
       # Look for common Aurora DSQL error patterns
       <<"SERROR", 0, "VERROR", 0, "C0A000", 0, "M", message::binary>> ->
