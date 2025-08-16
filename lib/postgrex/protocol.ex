@@ -3309,7 +3309,7 @@ defmodule Postgrex.Protocol do
               message: error_msg,
               postgres: %{
                 severity: "ERROR",
-                code: "0A000", pg_code: "0A000",
+                code: :feature_not_supported, pg_code: "0A000",
                 message: error_msg
               }
             }
@@ -3338,7 +3338,7 @@ defmodule Postgrex.Protocol do
               message: error_msg,
               postgres: %{
                 severity: "ERROR",
-                code: "0A000", pg_code: "0A000",
+                code: :feature_not_supported, pg_code: "0A000",
                 message: error_msg
               }
             }
@@ -3368,7 +3368,7 @@ defmodule Postgrex.Protocol do
       {:error, reason} ->
         error = %Postgrex.Error{
           message: "Aurora DSQL decode error: #{inspect(reason)}",
-          postgres: %{severity: "ERROR", code: "XX000", pg_code: "XX000"}
+          postgres: %{severity: "ERROR", code: :internal_error, pg_code: "XX000"}
         }
         # Use the simpler disconnect pattern that works
         {:disconnect, error, %{s | buffer: buffer}}
