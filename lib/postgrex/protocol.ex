@@ -3304,7 +3304,7 @@ defmodule Postgrex.Protocol do
       <<69, _length::32, _rest::binary>> = error_buffer ->
         case parse_aurora_dsql_error(error_buffer) do
           {:ok, error_msg} ->
-            # Create proper Postgrex error and disconnect
+            # Create proper Postgrex error and disconnect using the correct pattern
             error = %Postgrex.Error{
               message: error_msg,
               postgres: %{
@@ -3313,7 +3313,8 @@ defmodule Postgrex.Protocol do
                 "message" => error_msg
               }
             }
-            disconnect(s, :postgrex, "aurora_dsql_error", error, error_buffer)
+            # Use the simpler disconnect pattern that works
+            {:disconnect, error, %{s | buffer: error_buffer}}
           {:error, _} ->
             # If we can't parse the error, fall back to normal processing
             decode_rows_with_fallback(s, result_types, rows, buffer, types)
@@ -3332,7 +3333,7 @@ defmodule Postgrex.Protocol do
       <<69, _length::32, _rest::binary>> = error_buffer ->
         case parse_aurora_dsql_error(error_buffer) do
           {:ok, error_msg} ->
-            # Create proper Postgrex error and disconnect
+            # Create proper Postgrex error and disconnect using the correct pattern
             error = %Postgrex.Error{
               message: error_msg,
               postgres: %{
@@ -3341,7 +3342,8 @@ defmodule Postgrex.Protocol do
                 "message" => error_msg
               }
             }
-            disconnect(s, :postgrex, "aurora_dsql_error", error, error_buffer)
+            # Use the simpler disconnect pattern that works
+            {:disconnect, error, %{s | buffer: error_buffer}}
           {:error, _} ->
             # If we can't parse the error, fall back to normal processing
             decode_rows_with_fallback(s, result_types, rows, buffer, types)
@@ -3368,7 +3370,8 @@ defmodule Postgrex.Protocol do
           message: "Aurora DSQL decode error: #{inspect(reason)}",
           postgres: %{"severity" => "ERROR", "code" => "XX000"}
         }
-        disconnect(s, :postgrex, "decode_error", error, buffer)
+        # Use the simpler disconnect pattern that works
+        {:disconnect, error, %{s | buffer: buffer}}
     end
   end
 
