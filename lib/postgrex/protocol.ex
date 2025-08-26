@@ -3296,9 +3296,9 @@ defmodule Postgrex.Protocol do
     end
   end
 
-  # Aurora DSQL compatibility: Handle error messages in rows_recv with {:ok, state} pattern
+  # Database compatibility (originally added for Aurora DSQL): Handle error messages in rows_recv with {:ok, state} pattern
   defp rows_recv({:ok, %{types: types} = s}, result_types, rows, buffer) do
-    # Aurora DSQL compatibility: Check for error messages before decoding rows
+    # Database compatibility (originally added for Aurora DSQL): Check for error messages before decoding rows
     case buffer do
       # Handle Aurora DSQL error messages (starts with 0x45 = 'E')
       <<69, _length::32, _rest::binary>> = error_buffer ->
@@ -3327,7 +3327,7 @@ defmodule Postgrex.Protocol do
   end
 
   defp rows_recv(%{types: types} = s, result_types, rows, buffer) do
-    # Aurora DSQL compatibility: Check for error messages before decoding rows
+    # Database compatibility (originally added for Aurora DSQL): Check for error messages before decoding rows
     case buffer do
       # Handle Aurora DSQL error messages (starts with 0x45 = 'E')
       <<69, _length::32, _rest::binary>> = error_buffer ->
@@ -3364,10 +3364,10 @@ defmodule Postgrex.Protocol do
       {:more, buffer, rows, more} ->
         rows_recv(s, result_types, rows, buffer, more)
         
-      # Aurora DSQL compatibility: Handle unexpected decode errors
+      # Database compatibility (originally added for Aurora DSQL): Handle unexpected decode errors
       {:error, reason} ->
         error = %Postgrex.Error{
-          message: "Aurora DSQL decode error: #{inspect(reason)}",
+          message: "Database decode error: #{inspect(reason)}",
           postgres: %{severity: "ERROR", code: :internal_error, pg_code: "XX000"}
         }
         # Use the simpler disconnect pattern that works
@@ -3382,13 +3382,13 @@ defmodule Postgrex.Protocol do
       <<"SERROR", 0, "VERROR", 0, "C0A000", 0, "M", message::binary>> ->
         # Extract the error message
         case :binary.split(message, <<0>>, [:global]) do
-          [error_text | _] -> {:ok, "Aurora DSQL: #{error_text}"}
-          [] -> {:ok, "Aurora DSQL: Unknown error"}
+          [error_text | _] -> {:ok, "Database error: #{error_text}"}
+          [] -> {:ok, "Database error: Unknown error"}
         end
       
       # Handle other error formats
       _ ->
-        {:ok, "Aurora DSQL: Protocol error (unsupported operation)"}
+        {:ok, "Database protocol error: unsupported operation"}
     end
   rescue
     _ -> {:error, :parse_failed}
