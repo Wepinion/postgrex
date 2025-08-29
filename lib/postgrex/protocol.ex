@@ -3276,6 +3276,11 @@ defmodule Postgrex.Protocol do
     end
   end
 
+  # Aurora DSQL defensive clause: handle wrapped state
+  defp msg_recv({:ok, s}, timeout, buffer, more) do
+    msg_recv(s, timeout, buffer, more)
+  end
+  
   defp msg_recv(s, timeout, buffer) do
     case msg_decode(buffer) do
       {:ok, _, _} = ok -> ok
