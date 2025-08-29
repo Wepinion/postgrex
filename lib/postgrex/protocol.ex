@@ -2992,26 +2992,6 @@ defmodule Postgrex.Protocol do
     end
   end
 
-  # Aurora DSQL compatibility: Handle empty buffer case by continuing to receive data
-  # Aurora DSQL sometimes sends empty buffers that need additional network reads
-  defp recv_ready(s, status, <<>> = _empty_buffer) do
-    # Need to receive more data from the socket when buffer is empty
-    case msg_recv(s, :infinity, <<>>) do
-      {:ok, msg_ready(status: postgres), buffer} ->
-        {:ok, %{s | postgres: postgres, buffer: buffer}}
-
-      {:ok, msg_error(fields: fields), buffer} ->
-        err = Postgrex.Error.exception(postgres: fields)
-        {:disconnect, err, %{s | buffer: buffer}}
-
-      {:ok, msg, buffer} ->
-        s = handle_msg(s, status, msg)
-        recv_ready(s, status, buffer)
-
-      {:disconnect, _, _} = dis ->
-        dis
-    end
-  end
 
   defp recv_ready(%{transactions: :naive} = s, status, buffer) do
     case msg_recv(s, :infinity, buffer) do
