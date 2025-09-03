@@ -2992,11 +2992,24 @@ defmodule Postgrex.Protocol do
     end
   end
 
-  # Aurora DSQL compatibility: Handle case where state is incorrectly wrapped in {:ok, state}
-  # This defensive clause unwraps the state and delegates to the correct handler
-  defp recv_ready({:ok, s}, status, buffer) when is_map(s) do
-    # Unwrap and delegate to the actual recv_ready function
-    recv_ready(s, status, buffer)
+  # Aurora DSQL compatibility: Comprehensive logging for all wrapped states
+  defp recv_ready(wrapped_state, status, buffer) when tuple_size(wrapped_state) > 0 and elem(wrapped_state, 0) == :ok do
+    IO.puts("\n🔍 AURORA DSQL PROTOCOL DEBUG - recv_ready wrapped state:")
+    IO.puts("  Wrapped state type: #{inspect(wrapped_state |> elem(1) |> Map.get(:transactions))}")
+    IO.puts("  Status param: #{inspect(status)}")
+    IO.puts("  Buffer (first 50 bytes): #{inspect(binary_part(buffer, 0, min(byte_size(buffer), 50)))}")
+    IO.puts("  Full wrapped structure: #{inspect(wrapped_state, limit: 200, pretty: true)}")
+    
+    # Extract the actual state and retry
+    case wrapped_state do
+      {:ok, s} when is_map(s) ->
+        IO.puts("  → Unwrapping and retrying with clean state...")
+        recv_ready(s, status, buffer)
+      _ ->
+        IO.puts("  → Unknown wrapped format, passing through...")
+        # This will fail but with better diagnostics
+        {:error, {:aurora_dsql_wrapped_state, wrapped_state}}
+    end
   end
   
   defp recv_ready({:ok, %{transactions: :naive} = s}, status, buffer) do
@@ -3281,9 +3294,22 @@ defmodule Postgrex.Protocol do
     end
   end
 
-  # Aurora DSQL defensive clause: handle wrapped state
-  defp msg_recv({:ok, s}, timeout, buffer, more) do
-    msg_recv(s, timeout, buffer, more)
+  # Aurora DSQL defensive clause: Log and handle all wrapped states
+  defp msg_recv(wrapped, timeout, buffer, more) when tuple_size(wrapped) > 0 and elem(wrapped, 0) == :ok do
+    IO.puts("\n🔍 AURORA DSQL PROTOCOL DEBUG - msg_recv/4 wrapped state:")
+    IO.puts("  Timeout: #{inspect(timeout)}")
+    IO.puts("  Buffer size: #{byte_size(buffer)} bytes")
+    IO.puts("  More bytes needed: #{more}")
+    IO.puts("  Wrapped input: #{inspect(wrapped, limit: 100)}")
+    
+    case wrapped do
+      {:ok, s} when is_map(s) ->
+        IO.puts("  → Unwrapping state and continuing...")
+        msg_recv(s, timeout, buffer, more)
+      _ ->
+        IO.puts("  → Unexpected wrapped format!")
+        {:error, {:aurora_dsql_wrapped_msg_recv, wrapped}}
+    end
   end
   
   defp msg_recv(s, timeout, buffer) do
