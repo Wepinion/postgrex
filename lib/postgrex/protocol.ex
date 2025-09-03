@@ -2994,6 +2994,11 @@ defmodule Postgrex.Protocol do
 
   # Aurora DSQL compatibility: Handle case where state is incorrectly wrapped in {:ok, state}
   # This defensive clause unwraps the state and delegates to the correct handler
+  defp recv_ready({:ok, s}, status, buffer) when is_map(s) do
+    # Unwrap and delegate to the actual recv_ready function
+    recv_ready(s, status, buffer)
+  end
+  
   defp recv_ready({:ok, %{transactions: :naive} = s}, status, buffer) do
     # Explicitly handle the naive transaction case with unwrapped state
     case msg_recv(s, :infinity, buffer) do
