@@ -740,13 +740,28 @@ defmodule Postgrex.Protocol do
 
   ## handshake
 
-  defp handshake(host, %{sock: {:gen_tcp, sock}, timeout: timeout} = s, status) do
-    {:ok, peer} = :inet.peername(sock)
+  defp handshake(host, %{sock: {:gen_tcp, sock}} = s, status) do
+    # Aurora DSQL sometimes closes a freshly accepted socket before the first
+    # byte is exchanged, so peername fails with :enotconn. That is a failed
+    # connection attempt, not a bug: report it like a refused connect so
+    # DBConnection backs off and retries instead of crashing the connection
+    # process with a MatchError on every occurrence.
+    case :inet.peername(sock) do
+      {:ok, peer} ->
+        do_handshake_with_timer(host, %{s | peer: peer}, status)
+
+      {:error, reason} ->
+        sock_close(s)
+        {:error, conn_error(:tcp, "peername (#{host})", reason)}
+    end
+  end
+
+  defp do_handshake_with_timer(host, %{sock: {:gen_tcp, sock}, timeout: timeout} = s, status) do
     %{opts: opts} = status
     handshake_timeout = Keyword.get(opts, :handshake_timeout, timeout)
     timer = start_handshake_timer(handshake_timeout, sock)
 
-    case do_handshake(host, %{s | peer: peer}, status) do
+    case do_handshake(host, s, status) do
       {:ok, %{parameters: parameters} = s} ->
         cancel_handshake_timer(timer)
         ref = Postgrex.Parameters.insert(parameters)
